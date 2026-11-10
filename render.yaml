@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: larkfield-home-agent
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt && make prepare
+    startCommand: uvicorn src.api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: MODEL_NAME
+        sync: false
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_BASE_URL
+        sync: false
+      - key: PRICE_IN_PER_MTOK
+        sync: false
+      - key: PRICE_OUT_PER_MTOK
+        sync: false
+      - key: DB_PATH
+        sync: false

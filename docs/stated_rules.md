@@ -1,0 +1,46 @@
+# Stated rules - policy gaps and the rules applied
+
+RP-3.2 is authoritative but does not cover every operational condition below. Each gap is recorded in the required form. Clause references are to `policies/refund_policy_RP-3.2.md`; reason codes marked *(engine)* are additional to the codes named in the policy.
+
+- Policy silent on how to extract an order reference from free text; rule applied: normalise any `LF` / `#` / bare 6-digit reference to `LF-######` and require exactly one distinct reference.
+- Policy silent on tickets that mention more than one order; rule applied: `UNABLE_TO_VERIFY` with `ORDER_AMBIGUOUS` *(engine)* and no refund.
+- Policy silent on conflicting duplicate order rows; rule applied: mark the order `AMBIGUOUS` and make every order-dependent check `UNABLE_TO_VERIFY`.
+- Policy silent on identifying which order line a product description refers to; rule applied: normalised exact/contained product-name or SKU match; no match gives `UNABLE_TO_VERIFY` with `AFFECTED_LINE_UNVERIFIABLE` *(engine)*.
+- Policy silent on the affected quantity when a customer says "one of two chairs"; rule applied: use the extracted quantity (default 1) and cap it at the ordered quantity.
+- Policy silent on requests for more than the ordered quantity; rule applied: clamp to the ordered quantity and refund only that value (2.5).
+- Policy silent on prior refunds for other, non-affected lines in the same order; rule applied: exclude them from the amount and report `ALREADY_REFUNDED` separately (2.5).
+- Policy silent on a partially refunded affected line; rule applied: subtract the ISSUED amount and refund only the unpaid remainder, reporting `ALREADY_REFUNDED`.
+- Policy silent on a fully refunded line mixed with other eligible lines; rule applied: reject only when every affected line is fully refunded; otherwise refund the unpaid remainder of the rest.
+- Policy silent on refunding shipping or delivery charges; rule applied: shipping is never refunded; a request for it becomes `PROCEED_MODIFIED` with `PARTIAL_LINES`.
+- Policy silent on whole-order requests when only some lines are affected; rule applied: refund affected lines only and report `PARTIAL_LINES`.
+- Policy silent on how to classify "change of mind" versus "not as described"; rule applied: both use the ordinary 30-day window, while the 45-day extension requires a damaged/faulty item plus a photo.
+- Policy silent on whether a photo is required for a damaged claim inside 30 days; rule applied: no photo is required within 30 days; the photo only unlocks days 31-45.
+- Policy silent on whether the window uses delivery date or timestamp and whether partial days count; rule applied: UTC calendar-date difference from carrier `delivered_at` to ticket `received_at`.
+- Policy silent on refunds when the delivery status or delivery date is unavailable; rule applied: `UNABLE_TO_VERIFY` with `DELIVERY_DATE_UNAVAILABLE` *(engine)*.
+- Policy silent on carrier events that predate the shipment (`last_event_at < shipped_at`); rule applied: movement and status checks return `UNABLE_TO_VERIFY` with `MOVEMENT_DATA_UNVERIFIABLE` *(engine)* rather than trusting impossible data.
+- Policy silent on whether "more than 10 days" counts partial days; rule applied: exact elapsed time, so 10 days 8 hours exceeds 10 days.
+- Policy silent on orders with no shipment record; rule applied: carrier and movement checks return `UNABLE_TO_VERIFY` with `NO_SHIPMENT` *(engine)*.
+- Policy silent on a non-delivery claim when the carrier says `DELIVERED`; rule applied: the carrier-status check passes, no refund is proposed, and the customer is given the delivered status.
+- Policy silent on non-delivery claims where tracking moved normally within 10 days; rule applied: `PROCEED` with a current-status reply, no refund and no escalation.
+- Policy silent on the API outcome for an order-status answer; rule applied: `PROCEED` with no action and no refundable amount.
+- Policy silent on unrelated or unclassifiable email; rule applied: `OTHER` is answered with `PROCEED` and no action; a missing intent is `UNABLE_TO_VERIFY` with `UNCLASSIFIED_REQUEST` *(engine)*.
+- Policy silent on missing extraction facts; rule applied: the affected check returns `UNABLE_TO_VERIFY`, never `PASS`.
+- Policy silent on which language counts as an attempt to instruct or bypass the policy; rule applied: deterministic markers (`ignore ... instructions`, claimed pre-approval, `[system]`, authority-over-limit, chargeback or legal threats) escalate before every other rule.
+- Policy silent on precedence between an override attempt and an identity failure; rule applied: the Trust & Safety escalation wins and no refund is proposed.
+- Policy silent on exactly $150; rule applied: the auto-authority limit is inclusive, so approval is required only above $150.
+- Policy silent on whether the $150 test is before or after prior refunds and scope reduction; rule applied: it uses the final unpaid affected-line total per request.
+- Policy silent on per-line versus per-request authority; rule applied: one $150 threshold for the whole request, not per line.
+- Policy silent on currency and rounding; rule applied: amounts are USD, rounded to 2 decimals, with line value = affected quantity x unit price.
+- Policy silent on who approved a prior refund; rule applied: every refund with status `ISSUED` is counted regardless of `approved_by`.
+- Policy silent on replayed or duplicate requests (`3.3`); rule applied: the pure checks engine returns `NOT_APPLICABLE` without ledger evidence, the orchestrator must enforce at-most-once, and `already_processed=true` yields `REJECT` with `ALREADY_PROCESSED` *(engine)*.
+- Policy silent on whether escalations require human approval; rule applied: every escalation sets `human_approval_required=true` with its role (`TRUST_SAFETY` or `CARRIER_CLAIMS`).
+- Policy silent on return logistics and labels; rule applied: the decision covers the refund only; no return label or reverse-logistics action is taken.
+- Policy silent on a missing customer record; rule applied: an email absent from the CRM is `CUSTOMER_MISMATCH`, while missing identity data is `UNABLE_TO_VERIFY` with `IDENTITY_UNVERIFIABLE` *(engine)*.
+- Policy silent on emails without any order reference; rule applied: `INVALID_REQUEST` with `ORDER_NOT_FOUND`.
+- Policy silent on duplicate submissions of the same ticket or forwarded email; rule applied: the same `ticket_id` or deterministic dedupe key returns the existing run and never creates a second ledger row.
+- Policy silent on repeated or conflicting human decisions; rule applied: only a run with `human_approval_required=true` and status `PENDING` can be decided once; repeats or conflicts return the run unchanged and write nothing.
+- Policy silent on LLM extraction failure or malformed JSON; rule applied: deterministic regex/order/injection/forwarded-message backup continues the run and the pipeline still returns a schema-valid response.
+- Policy silent on unexpected pipeline exceptions; rule applied: return a valid `UNABLE_TO_VERIFY` run with a deterministic customer reply rather than an error response.
+- Policy silent on the wording of customer replies; rule applied: deterministic templates for `REJECT`, `INVALID_REQUEST` and `UNABLE_TO_VERIFY`, and an LLM draft for the other outcomes that must pass amount, order-id and no-false-refund validation or fall back to the template.
+- Policy silent on what the draft may mention; rule applied: never mention injection detection or internal policy codes, and never confirm an order in an `INVALID_REQUEST` reply.
+- Policy silent on which extracted fields are authoritative; rule applied: LLM output is treated as claims, safety/eligibility flags come from deterministic text and attachment evidence, and every order/item claim is verified against the prepared data before use.
