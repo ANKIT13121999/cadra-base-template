@@ -37,6 +37,13 @@ class ModelCallResult:
         }
 
 
+def _strip_think(text: str) -> str:
+    text = re.sub(r"<think\b[^>]*>.*?</think\s*>", "", text, flags=re.IGNORECASE | re.DOTALL)
+    if "<think" in text.lower():
+        text = text[: text.lower().find("<think")].strip()
+    return text.strip()
+
+
 def _opencode_config() -> dict[str, Any]:
     path = Path(__file__).resolve().parents[1] / "opencode.json"
     if not path.is_file():
@@ -73,7 +80,7 @@ class LLMClient:
             or os.getenv("OPENAI_API_KEY")
             or str(options.get("apiKey") or "")
         )
-        self.model = os.getenv("MODEL_NAME") or os.getenv("CADRA_MODEL") or os.getenv("CADRA_MODEL_ID") or model
+        self.model = os.getenv("MODEL_NAME") or ""
         self.timeout_seconds = float(os.getenv("CADRA_TIMEOUT_SECONDS", timeout_seconds))
         self.input_price_per_mtok = float(os.getenv("PRICE_IN_PER_MTOK", "0.60"))
         self.output_price_per_mtok = float(os.getenv("PRICE_OUT_PER_MTOK", "3.00"))
@@ -95,6 +102,17 @@ class LLMClient:
             8,
         )
 
+    def _post(self, payload: dict[str, Any]) -> httpx.Response:
+        try:
+            return httpx.post(
+                self.chat_url,
+                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+                json=payload,
+                timeout=self.timeout_seconds,
+            )
+        except httpx.HTTPError as exc:
+            raise LLMError(f"LLM request failed: {type(exc).__name__}") from exc
+
     def chat(
         self,
         messages: Iterable[dict[str, str]],
@@ -104,30 +122,27 @@ class LLMClient:
         json_mode: bool = False,
     ) -> ModelCallResult:
         if not self.configured:
-            raise LLMError("LLM is not configured (set CADRA_PROXY_URL and CADRA_TOKEN)")
+            raise LLMError("LLM is not configured (set LLM_BASE_URL and LLM_API_KEY)")
+        if not self.model:
+            raise LLMError("MODEL_NAME is not set")
         payload = {
             "model": self.model,
             "messages": list(messages),
             "temperature": temperature,
-            "max_tokens": max_tokens,
+            "max_completion_tokens": max_tokens,
             "reasoning_effort": "none",
-            "reasoning": {"enabled": False},
         }
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
         started = time.perf_counter()
-        try:
-            response = httpx.post(
-                self.chat_url,
-                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-                json=payload,
-                timeout=self.timeout_seconds,
-            )
-        except httpx.HTTPError as exc:
-            raise LLMError(f"LLM request failed: {type(exc).__name__}") from exc
+        response = self._post(payload)
+        if response.status_code == 400 and "reasoning_effort" in payload:
+            retry_payload = {key: value for key, value in payload.items() if key != "reasoning_effort"}
+            response = self._post(retry_payload)
         latency_ms = int(round((time.perf_counter() - started) * 1000))
         if response.status_code >= 400:
-            raise LLMError(f"LLM returned HTTP {response.status_code}")
+            body = (response.text or "")[:300].replace("\n", " ")
+            raise LLMError(f"LLM returned HTTP {response.status_code}: {body}")
         try:
             data = response.json()
         except ValueError as exc:
@@ -139,6 +154,7 @@ class LLMClient:
         content = message.get("content")
         if not isinstance(content, str) or not content.strip():
             raise LLMError("LLM returned empty content")
+        content = _strip_think(content)
         usage = data.get("usage") or {}
         input_tokens = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
         output_tokens = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
@@ -153,10 +169,7 @@ class LLMClient:
 
 
 def extract_json_object(text: str) -> dict[str, Any] | None:
-    cleaned = text.strip()
-    cleaned = re.sub(r"<think\b[^>]*>.*?</think\s*>", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
-    if "<think" in cleaned.lower():
-        cleaned = cleaned[: cleaned.lower().find("<think")].strip()
+    cleaned = _strip_think(text)
     if cleaned.startswith("```"):
         cleaned = cleaned.strip("`")
         if cleaned.lower().startswith("json"):
