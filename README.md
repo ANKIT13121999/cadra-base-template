@@ -68,13 +68,13 @@ Environment:
 - `PORT` - API port (default `8000`)
 - `CADRA_PROXY_URL`, `CADRA_TOKEN` - model endpoint and token; local dev falls back to `opencode.json`
 - `CADRA_MODEL` - model name (default `cadra`)
-- `CADRA_INPUT_PRICE_PER_MTOK` / `CADRA_OUTPUT_PRICE_PER_MTOK` - fallback cost rates if the proxy does not return `usage.cost`
+- `PRICE_IN_PER_MTOK` / `PRICE_OUT_PER_MTOK` - token prices for `measured_cost_usd` (defaults 0.60 / 3.00)
 
-Endpoints: `GET /health`, `POST /tickets`, `GET /runs/{id}`, `POST /runs/{id}/decision`, `GET /ledger`.
+Endpoints: `GET /health`, `POST /tickets`, `GET /runs/{id}`, `POST /runs/{id}/decision`, `GET /ledger`, `GET /debug/llm`.
 
 `POST /tickets` is idempotent on `ticket_id` or the deterministic dedupe key: a repeat returns the existing run and does not create a second ledger row. A decision can be applied once to a pending approval run; repeats/conflicts return the run unchanged. The service only proposes decisions - it never issues a refund or sends email.
 
-Added run field: **`latency_ms`** (integer, end-to-end pipeline time). Trace model calls record the real returned model name, input/output tokens and measured cost (from proxy `usage.cost`, or configured fallback rates).
+Added run field: **`latency_ms`** (integer, end-to-end pipeline time). Trace model calls record the real returned model name and token usage; `measured_cost_usd` is computed from `PRICE_IN_PER_MTOK`/`PRICE_OUT_PER_MTOK` (defaults 0.60 / 3.00). `trace.llm_error` records a short reason when an LLM call is skipped or fails, and `GET /debug/llm` performs one tiny call.
 
 ## Checks engine
 

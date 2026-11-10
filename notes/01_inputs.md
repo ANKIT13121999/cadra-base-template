@@ -35,7 +35,7 @@ Response `TicketResponse`:
 | `checks[]` | `check_id`, `result` (PASS/FAIL/NOT_APPLICABLE/UNABLE_TO_VERIFY), `evidence[]` (`source`,`ref`,`value`), `policy_clause` |
 | `human_approval_required` / `approver_role` | SUPPORT_LEAD, TRUST_SAFETY, CARRIER_CLAIMS |
 | `draft_reply` | to, subject, body |
-| `trace` | `model_calls[]`, `tools_called[]`, `documents_used[]`, `cost_usd` |
+| `trace` | `model_calls[]`, `tools_called[]`, `documents_used[]`, `measured_cost_usd` |
 
 Side models: `Decision` (approve/reject + approver) and `LedgerEntry` (`action` REFUND/REPLY/ESCALATION, `amount`, `status` PROPOSED/APPROVED/REJECTED).
 

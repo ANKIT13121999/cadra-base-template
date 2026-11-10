@@ -378,7 +378,7 @@ def extract_ticket(ticket: Mapping[str, Any], llm: LLMClient | None = None, *, u
         client = llm or LLMClient()
         if client.configured:
             try:
-                model_call = client.chat(_build_messages(ticket), max_tokens=1200)
+                model_call = client.chat(_build_messages(ticket), max_tokens=1200, json_mode=True)
                 payload = extract_json_object(model_call.content)
                 if payload is None:
                     raise LLMError("LLM response was not valid JSON")
@@ -400,8 +400,10 @@ def extract_ticket(ticket: Mapping[str, Any], llm: LLMClient | None = None, *, u
                 source = "llm"
             except (LLMError, ValueError, TypeError) as exc:
                 error = f"{type(exc).__name__}: {exc}"
+                print(f"llm_error: {error}", flush=True)
         else:
             error = "LLM not configured; deterministic backup used"
+            print(f"llm_error: LLMNotConfigured: {error}", flush=True)
 
     ticket_type = rule_type or llm_type or "OTHER"
     return Extraction(

@@ -107,7 +107,7 @@ def main() -> int:
                 print(
                     f"{run['ticket_id']:>4}  outcome={run['outcome']:<18} "
                     f"approver={str(run.get('approver_role')):<15} "
-                    f"cost=${run['trace']['cost_usd']:.6f}  latency={run['latency_ms']}ms"
+                    f"cost=${run['trace']['measured_cost_usd']:.6f}  latency={run['latency_ms']}ms"
                 )
 
             first = tickets[0]
@@ -152,7 +152,7 @@ def main() -> int:
             process.wait(timeout=10)
         log_handle.close()
 
-    costs = [float(run["trace"]["cost_usd"]) for run in runs]
+    costs = [float(run["trace"]["measured_cost_usd"]) for run in runs]
     latencies = [int(run["latency_ms"]) for run in runs]
     print("")
     print(f"schema-valid runs: {len(runs)}/{len(runs)}")

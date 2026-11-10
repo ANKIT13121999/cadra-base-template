@@ -136,7 +136,7 @@ def render_template(
     elif outcome == "PROCEED":
         body = (
             "Thanks for contacting Larkfield Home.\n\n"
-            f"We've approved a refund of {money}{order}. It will be processed shortly.\n\n"
+            f"We're processing a refund of {money}{order}.\n\n"
             "Kind regards,\nLarkfield Home Customer Care"
         )
     else:
@@ -262,6 +262,7 @@ def build_draft(
 
     client = llm or LLMClient()
     if not client.configured:
+        print("llm_error: LLMNotConfigured: draft skipped", flush=True)
         return DraftResult(draft=template, used_llm=False, fallback_reason="LLM not configured")
     original_subject = getattr(extraction, "original_subject", None) or str(ticket.get("subject") or "")
     model_call: ModelCallResult | None = None
@@ -269,6 +270,7 @@ def build_draft(
         model_call = client.chat(
             _llm_messages(outcome, reason_codes, order_id, amount, approver_role, original_subject),
             max_tokens=450,
+            json_mode=True,
         )
         payload = extract_json_object(model_call.content)
         if payload is None:
@@ -285,6 +287,7 @@ def build_draft(
             order_id=order_id,
         )
         if violations:
+            print(f"llm_error: DraftValidation: {', '.join(violations)}", flush=True)
             return DraftResult(
                 draft=template,
                 model_call=model_call,
@@ -294,6 +297,7 @@ def build_draft(
             )
         return DraftResult(draft=candidate, model_call=model_call, used_llm=True, violations=[])
     except (LLMError, ValueError, TypeError) as exc:
+        print(f"llm_error: {type(exc).__name__}: {exc}", flush=True)
         return DraftResult(
             draft=template,
             model_call=model_call,

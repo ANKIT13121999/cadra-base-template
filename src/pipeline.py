@@ -112,6 +112,7 @@ def _trace(
     extraction: Extraction,
     draft_model_call: Any,
     latency_ms: int,
+    llm_error: str | None = None,
 ) -> dict[str, Any]:
     model_calls = []
     cost = 0.0
@@ -125,7 +126,8 @@ def _trace(
         "model_calls": model_calls,
         "tools_called": ["extract", "resolve", "checks", "decide", "draft"],
         "documents_used": [DOCUMENT],
-        "cost_usd": round(cost, 8),
+        "measured_cost_usd": round(cost, 8),
+        "llm_error": llm_error,
     }
 
 
@@ -163,7 +165,7 @@ def _fallback_response(
         "human_approval_required": False,
         "approver_role": None,
         "draft_reply": draft,
-        "trace": _trace(extraction, None, latency_ms),
+        "trace": _trace(extraction, None, latency_ms, extraction.error or error),
     }
     response = _validate_response(payload)
     response["latency_ms"] = latency_ms
@@ -245,6 +247,14 @@ def process_ticket(
             use_llm=use_llm,
         )
         latency_ms = int(round((time.perf_counter() - started) * 1000))
+        llm_error = extraction.error
+        if draft_result.fallback_reason and draft_result.fallback_reason != "deterministic outcome":
+            draft_error = draft_result.fallback_reason
+            if draft_result.violations:
+                draft_error += ": " + ", ".join(draft_result.violations)
+            llm_error = f"{llm_error}; {draft_error}" if llm_error else draft_error
+        if llm_error:
+            llm_error = llm_error[:300]
         payload = {
             "ticket_id": str(ticket.get("ticket_id") or ""),
             "run_id": run_id,
@@ -256,7 +266,7 @@ def process_ticket(
             "human_approval_required": decision["human_approval_required"],
             "approver_role": decision["approver_role"],
             "draft_reply": draft_result.draft,
-            "trace": _trace(extraction, draft_result.model_call, latency_ms),
+            "trace": _trace(extraction, draft_result.model_call, latency_ms, llm_error),
         }
         response = _validate_response(payload)
         response["latency_ms"] = latency_ms

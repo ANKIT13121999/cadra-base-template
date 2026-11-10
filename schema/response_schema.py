@@ -56,7 +56,8 @@ class Trace(BaseModel):
     model_calls: List[ModelCall]
     tools_called: List[str]
     documents_used: List[DocumentUsed]
-    cost_usd: float
+    measured_cost_usd: float
+    llm_error: Optional[str] = None
 
 class TicketResponse(BaseModel):
     ticket_id: str

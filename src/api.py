@@ -178,6 +178,16 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/debug/llm")
+def debug_llm() -> dict[str, Any]:
+    try:
+        result = LLMClient().chat([{"role": "user", "content": "Reply with ok."}], max_tokens=50)
+        return {"model": result.model, "input_tokens": result.input_tokens, "output_tokens": result.output_tokens, "error": None}
+    except Exception as exc:
+        print(f"llm_error: {type(exc).__name__}: {exc}", flush=True)
+        return {"model": None, "input_tokens": 0, "output_tokens": 0, "error": f"{type(exc).__name__}: {exc}"}
+
+
 @app.post("/tickets")
 def create_ticket(ticket: Ticket) -> dict[str, Any]:
     payload = ticket.model_dump(by_alias=True)

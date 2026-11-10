@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -74,8 +75,8 @@ class LLMClient:
         )
         self.model = os.getenv("MODEL_NAME") or os.getenv("CADRA_MODEL") or os.getenv("CADRA_MODEL_ID") or model
         self.timeout_seconds = float(os.getenv("CADRA_TIMEOUT_SECONDS", timeout_seconds))
-        self.input_price_per_mtok = float(os.getenv("PRICE_IN_PER_MTOK", os.getenv("CADRA_INPUT_PRICE_PER_MTOK", "0.15")))
-        self.output_price_per_mtok = float(os.getenv("PRICE_OUT_PER_MTOK", os.getenv("CADRA_OUTPUT_PRICE_PER_MTOK", "0.60")))
+        self.input_price_per_mtok = float(os.getenv("PRICE_IN_PER_MTOK", "0.60"))
+        self.output_price_per_mtok = float(os.getenv("PRICE_OUT_PER_MTOK", "3.00"))
 
     @property
     def configured(self) -> bool:
@@ -88,8 +89,6 @@ class LLMClient:
         return f"{self.base_url}/chat/completions"
 
     def _calculate_cost(self, usage: dict[str, Any], input_tokens: int, output_tokens: int) -> float:
-        if isinstance(usage.get("cost"), (int, float)):
-            return round(float(usage["cost"]), 8)
         return round(
             (input_tokens / 1_000_000) * self.input_price_per_mtok
             + (output_tokens / 1_000_000) * self.output_price_per_mtok,
@@ -102,6 +101,7 @@ class LLMClient:
         *,
         max_tokens: int = 800,
         temperature: float = 0.0,
+        json_mode: bool = False,
     ) -> ModelCallResult:
         if not self.configured:
             raise LLMError("LLM is not configured (set CADRA_PROXY_URL and CADRA_TOKEN)")
@@ -110,7 +110,11 @@ class LLMClient:
             "messages": list(messages),
             "temperature": temperature,
             "max_tokens": max_tokens,
+            "reasoning_effort": "none",
+            "reasoning": {"enabled": False},
         }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
         started = time.perf_counter()
         try:
             response = httpx.post(
@@ -136,8 +140,8 @@ class LLMClient:
         if not isinstance(content, str) or not content.strip():
             raise LLMError("LLM returned empty content")
         usage = data.get("usage") or {}
-        input_tokens = int(usage.get("prompt_tokens") or 0)
-        output_tokens = int(usage.get("completion_tokens") or 0)
+        input_tokens = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+        output_tokens = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
         return ModelCallResult(
             content=content.strip(),
             model=str(data.get("model") or self.model),
@@ -150,6 +154,9 @@ class LLMClient:
 
 def extract_json_object(text: str) -> dict[str, Any] | None:
     cleaned = text.strip()
+    cleaned = re.sub(r"<think\b[^>]*>.*?</think\s*>", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    if "<think" in cleaned.lower():
+        cleaned = cleaned[: cleaned.lower().find("<think")].strip()
     if cleaned.startswith("```"):
         cleaned = cleaned.strip("`")
         if cleaned.lower().startswith("json"):
